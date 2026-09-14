@@ -1,5 +1,6 @@
 """Integration tests against a real Postgres (docker compose up -d postgres).
-Not part of the fast unit suite; skipped automatically if the DB is unreachable.
+Skipped automatically if the DB is unreachable — except in CI (CI=true), where a
+missing database is a broken pipeline, not a reason to report green.
 
 Runs against a dedicated "dispatch_test" database (created by
 docker/init-test-db.sql), never the dev "dispatch" DB — create_all/drop_all here
@@ -9,9 +10,11 @@ import os
 from collections.abc import AsyncIterator
 
 import pytest
+from fastapi.testclient import TestClient
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.pool import NullPool
 
+from dispatch_engine.api.app import create_app
 from dispatch_engine.domain import Job, JobStatus, Technician
 from dispatch_engine.infra.db import Base
 from dispatch_engine.infra.postgres import PostgresRepository
@@ -19,6 +22,13 @@ from dispatch_engine.infra.postgres import PostgresRepository
 TEST_DATABASE_URL = os.environ.get(
     "TEST_DATABASE_URL", "postgresql+asyncpg://dispatch:dispatch@localhost:5432/dispatch_test"
 )
+IN_CI = bool(os.environ.get("CI"))
+
+
+def _unreachable(reason: str) -> None:
+    if IN_CI:
+        pytest.fail(f"Postgres required in CI but unreachable: {reason}")
+    pytest.skip(f"Postgres not reachable: {reason}")
 
 
 @pytest.fixture
@@ -31,7 +41,7 @@ async def session() -> AsyncIterator[AsyncSession]:
             await conn.run_sync(Base.metadata.create_all)
     except OSError as exc:
         await test_engine.dispose()
-        pytest.skip(f"Postgres not reachable: {exc}")
+        _unreachable(str(exc))
 
     session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
     async with session_maker() as s:
@@ -94,3 +104,25 @@ async def test_completed_job_no_longer_counts_toward_load(session: AsyncSession)
     assert reloaded.load == 0
     assert reloaded_job is not None
     assert reloaded_job.status == JobStatus.COMPLETED
+
+
+async def test_list_returns_everything_added(session: AsyncSession) -> None:
+    repo = PostgresRepository(session)
+    t1 = await repo.add_technician(Technician(name="A", max_jobs=1, skills=frozenset({"x"})))
+    t2 = await repo.add_technician(Technician(name="B", max_jobs=1, skills=frozenset({"y"})))
+    j1 = await repo.add_job(Job(title="J1", skill="x"))
+    j2 = await repo.add_job(Job(title="J2", skill="y"))
+
+    assert {t.id for t in await repo.list_technicians()} == {t1.id, t2.id}
+    assert {j.id for j in await repo.list_jobs()} == {j1.id, j2.id}
+
+
+def test_ready_endpoint_reports_database_reachable() -> None:
+    # Goes through the app's own engine (DATABASE_URL), the same path the
+    # container healthcheck uses.
+    with TestClient(create_app()) as client:
+        r = client.get("/ready")
+    if r.status_code == 503:
+        _unreachable(r.json()["detail"])
+    assert r.status_code == 200
+    assert r.json() == {"status": "ready"}

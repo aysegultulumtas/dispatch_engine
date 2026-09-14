@@ -23,7 +23,8 @@ def get_repository(session: Annotated[AsyncSession, Depends(get_db_session)]) ->
 
 
 def get_engine(request: Request) -> DispatchEngine:
-    return request.app.state.engine
+    engine: DispatchEngine = request.app.state.engine
+    return engine
 
 
 Repository = Annotated[RepositoryProtocol, Depends(get_repository)]
