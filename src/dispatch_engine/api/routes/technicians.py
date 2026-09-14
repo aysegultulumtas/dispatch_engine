@@ -13,10 +13,10 @@ async def create_technician(payload: TechnicianCreate, repo: Repository) -> Tech
     technician = Technician(
         name=payload.name, max_jobs=payload.max_jobs, skills=frozenset(payload.skills)
     )
-    repo.add_technician(technician)
+    await repo.add_technician(technician)
     return TechnicianRead.from_domain(technician)
 
 
 @router.get("")
 async def list_technicians(repo: Repository) -> list[TechnicianRead]:
-    return [TechnicianRead.from_domain(t) for t in repo.list_technicians()]
+    return [TechnicianRead.from_domain(t) for t in await repo.list_technicians()]

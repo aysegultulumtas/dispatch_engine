@@ -5,14 +5,12 @@ from fastapi.responses import JSONResponse
 
 from dispatch_engine import __version__
 from dispatch_engine.domain import DispatchEngine, DomainError
-from dispatch_engine.infra.memory import InMemoryRepository
 
 from .routes import jobs, technicians
 
 
 def create_app() -> FastAPI:
     app = FastAPI(title="Dispatch Engine", version=__version__)
-    app.state.repository = InMemoryRepository()
     app.state.engine = DispatchEngine()
     app.include_router(technicians.router)
     app.include_router(jobs.router)

@@ -1,4 +1,5 @@
-"""Dict-backed store. Replaced by a PostgreSQL repository in a later phase."""
+"""Dict-backed store. Async to match the Repository protocol (see repository.py);
+no real I/O happens here, the object already holds the current state in place."""
 
 from uuid import UUID
 
@@ -10,22 +11,29 @@ class InMemoryRepository:
         self._technicians: dict[UUID, Technician] = {}
         self._jobs: dict[UUID, Job] = {}
 
-    def add_technician(self, technician: Technician) -> Technician:
+    async def add_technician(self, technician: Technician) -> Technician:
         self._technicians[technician.id] = technician
         return technician
 
-    def get_technician(self, technician_id: UUID) -> Technician | None:
+    async def get_technician(self, technician_id: UUID) -> Technician | None:
         return self._technicians.get(technician_id)
 
-    def list_technicians(self) -> list[Technician]:
+    async def list_technicians(self) -> list[Technician]:
         return list(self._technicians.values())
 
-    def add_job(self, job: Job) -> Job:
+    async def update_technician(self, technician: Technician) -> None:
+        # already the same object; kept for interface parity
+        self._technicians[technician.id] = technician
+
+    async def add_job(self, job: Job) -> Job:
         self._jobs[job.id] = job
         return job
 
-    def get_job(self, job_id: UUID) -> Job | None:
+    async def get_job(self, job_id: UUID) -> Job | None:
         return self._jobs.get(job_id)
 
-    def list_jobs(self) -> list[Job]:
+    async def list_jobs(self) -> list[Job]:
         return list(self._jobs.values())
+
+    async def update_job(self, job: Job) -> None:
+        self._jobs[job.id] = job  # already the same object; kept for interface parity
