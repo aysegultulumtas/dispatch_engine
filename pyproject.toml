@@ -17,12 +17,14 @@ dependencies = [
     "alembic>=1.13",
 ]
 
-[project.optional-dependencies]
+[dependency-groups]
 dev = [
     "pytest>=8",
     "pytest-asyncio>=0.24",
-    "httpx>=0.27",
+    "pytest-cov>=6",
+    "httpx2>=2",
     "ruff>=0.6",
+    "mypy>=1.14",
 ]
 
 [tool.setuptools.packages.find]
@@ -31,6 +33,19 @@ where = ["src"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 asyncio_mode = "auto"
+
+[tool.coverage.run]
+source = ["dispatch_engine"]
+
+[tool.mypy]
+files = ["src", "tests"]
+strict = true
+plugins = ["pydantic.mypy"]
+
+[[tool.mypy.overrides]]
+module = "tests.*"
+disallow_any_generics = false
+warn_return_any = false
 
 [tool.ruff]
 line-length = 100
