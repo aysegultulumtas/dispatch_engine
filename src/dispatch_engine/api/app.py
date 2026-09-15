@@ -6,13 +6,15 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from redis.asyncio import Redis
 from sqlalchemy import text
 
 from dispatch_engine import __version__
 from dispatch_engine.domain import DispatchEngine, DomainError
 from dispatch_engine.infra.db import engine as db_engine
+from dispatch_engine.infra.queue import REDIS_URL
 
-from .routes import jobs, technicians
+from .routes import dispatch_runs, jobs, technicians
 
 # Local frontend dev servers only (Vite default 5173, Lovable-exported apps default 8080).
 # Tighten this to a real deployed origin before this ever leaves localhost.
@@ -40,6 +42,7 @@ def create_app() -> FastAPI:
     app.state.engine = DispatchEngine()
     app.include_router(technicians.router)
     app.include_router(jobs.router)
+    app.include_router(dispatch_runs.router)
 
     @app.exception_handler(DomainError)
     async def domain_error_handler(_: Request, exc: DomainError) -> JSONResponse:
@@ -56,13 +59,23 @@ def create_app() -> FastAPI:
     async def ready() -> JSONResponse:
         # Readiness: can we actually serve? Any connection failure (refused, auth,
         # timeout) means "not yet"; the orchestrator decides what to do with that.
+        problems: dict[str, str] = {}
         try:
             async with db_engine.connect() as conn:
                 await conn.execute(text("SELECT 1"))
         except Exception as exc:  # noqa: BLE001
-            return JSONResponse(
-                status_code=503, content={"status": "unavailable", "detail": str(exc)}
-            )
+            problems["database"] = str(exc)
+
+        redis = Redis.from_url(REDIS_URL)
+        try:
+            await redis.ping()
+        except Exception as exc:  # noqa: BLE001
+            problems["redis"] = str(exc)
+        finally:
+            await redis.aclose()
+
+        if problems:
+            return JSONResponse(status_code=503, content={"status": "unavailable", **problems})
         return JSONResponse(content={"status": "ready"})
 
     return app

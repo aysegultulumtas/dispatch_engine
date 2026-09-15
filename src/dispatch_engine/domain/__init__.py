@@ -6,11 +6,21 @@ from .exceptions import (
     NoAvailableTechnician,
     SkillMismatch,
 )
-from .models import Job, JobStatus, Technician
+from .models import (
+    Assignment,
+    DispatchRun,
+    DispatchRunStatus,
+    Job,
+    JobStatus,
+    Technician,
+)
 
 __all__ = [
+    "Assignment",
     "CapacityExceeded",
     "DispatchEngine",
+    "DispatchRun",
+    "DispatchRunStatus",
     "DomainError",
     "InvalidTransition",
     "Job",

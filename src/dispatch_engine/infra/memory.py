@@ -3,13 +3,14 @@ no real I/O happens here, the object already holds the current state in place.""
 
 from uuid import UUID
 
-from dispatch_engine.domain import Job, Technician
+from dispatch_engine.domain import DispatchRun, Job, Technician
 
 
 class InMemoryRepository:
     def __init__(self) -> None:
         self._technicians: dict[UUID, Technician] = {}
         self._jobs: dict[UUID, Job] = {}
+        self._dispatch_runs: dict[UUID, DispatchRun] = {}
 
     async def add_technician(self, technician: Technician) -> Technician:
         self._technicians[technician.id] = technician
@@ -37,3 +38,13 @@ class InMemoryRepository:
 
     async def update_job(self, job: Job) -> None:
         self._jobs[job.id] = job  # already the same object; kept for interface parity
+
+    async def add_dispatch_run(self, run: DispatchRun) -> DispatchRun:
+        self._dispatch_runs[run.id] = run
+        return run
+
+    async def get_dispatch_run(self, run_id: UUID) -> DispatchRun | None:
+        return self._dispatch_runs.get(run_id)
+
+    async def update_dispatch_run(self, run: DispatchRun) -> None:
+        self._dispatch_runs[run.id] = run  # already the same object; kept for interface parity

@@ -5,7 +5,7 @@ from uuid import UUID
 
 from pydantic import BaseModel, Field
 
-from dispatch_engine.domain import Job, JobStatus, Technician
+from dispatch_engine.domain import DispatchRun, DispatchRunStatus, Job, JobStatus, Technician
 
 NonEmptyStr = Annotated[str, Field(min_length=1, max_length=100)]
 
@@ -44,4 +44,28 @@ class JobRead(BaseModel):
     def from_domain(cls, j: Job) -> "JobRead":
         return cls(
             id=j.id, title=j.title, skill=j.skill, status=j.status, technician_id=j.technician_id
+        )
+
+
+class AssignmentRead(BaseModel):
+    job_id: UUID
+    technician_id: UUID
+
+
+class DispatchRunRead(BaseModel):
+    id: UUID
+    status: DispatchRunStatus
+    assignments: list[AssignmentRead]
+    error: str | None
+
+    @classmethod
+    def from_domain(cls, r: DispatchRun) -> "DispatchRunRead":
+        return cls(
+            id=r.id,
+            status=r.status,
+            assignments=[
+                AssignmentRead(job_id=a.job_id, technician_id=a.technician_id)
+                for a in r.assignments
+            ],
+            error=r.error,
         )

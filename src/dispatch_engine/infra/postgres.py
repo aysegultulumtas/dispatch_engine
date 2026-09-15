@@ -7,9 +7,16 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from dispatch_engine.domain import Job, JobStatus, Technician
+from dispatch_engine.domain import (
+    Assignment,
+    DispatchRun,
+    DispatchRunStatus,
+    Job,
+    JobStatus,
+    Technician,
+)
 
-from .orm import JobRow, TechnicianRow
+from .orm import DispatchRunRow, JobRow, TechnicianRow
 
 
 def _technician_to_domain(row: TechnicianRow) -> Technician:
@@ -29,6 +36,18 @@ def _job_to_domain(row: JobRow) -> Job:
         skill=row.skill,
         status=JobStatus(row.status),
         technician_id=row.technician_id,
+    )
+
+
+def _dispatch_run_to_domain(row: DispatchRunRow) -> DispatchRun:
+    return DispatchRun(
+        id=row.id,
+        status=DispatchRunStatus(row.status),
+        assignments=[
+            Assignment(job_id=UUID(a["job_id"]), technician_id=UUID(a["technician_id"]))
+            for a in row.assignments
+        ],
+        error=row.error,
     )
 
 
@@ -98,4 +117,26 @@ class PostgresRepository:
             raise ValueError(f"job {job.id} not found")
         row.status = job.status.value
         row.technician_id = job.technician_id
+        await self._session.commit()
+
+    async def add_dispatch_run(self, run: DispatchRun) -> DispatchRun:
+        row = DispatchRunRow(id=run.id, status=run.status.value, assignments=[], error=run.error)
+        self._session.add(row)
+        await self._session.commit()
+        return run
+
+    async def get_dispatch_run(self, run_id: UUID) -> DispatchRun | None:
+        row = await self._session.get(DispatchRunRow, run_id)
+        return _dispatch_run_to_domain(row) if row else None
+
+    async def update_dispatch_run(self, run: DispatchRun) -> None:
+        row = await self._session.get(DispatchRunRow, run.id)
+        if row is None:
+            raise ValueError(f"dispatch run {run.id} not found")
+        row.status = run.status.value
+        row.assignments = [
+            {"job_id": str(a.job_id), "technician_id": str(a.technician_id)}
+            for a in run.assignments
+        ]
+        row.error = run.error
         await self._session.commit()

@@ -117,12 +117,12 @@ async def test_list_returns_everything_added(session: AsyncSession) -> None:
     assert {j.id for j in await repo.list_jobs()} == {j1.id, j2.id}
 
 
-def test_ready_endpoint_reports_database_reachable() -> None:
-    # Goes through the app's own engine (DATABASE_URL), the same path the
-    # container healthcheck uses.
+def test_ready_endpoint_reports_database_and_redis_reachable() -> None:
+    # Goes through the app's own engine/redis connection (DATABASE_URL, REDIS_URL),
+    # the same path the container healthcheck uses.
     with TestClient(create_app()) as client:
         r = client.get("/ready")
     if r.status_code == 503:
-        _unreachable(r.json()["detail"])
+        _unreachable(str(r.json()))
     assert r.status_code == 200
     assert r.json() == {"status": "ready"}

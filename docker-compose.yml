@@ -3,6 +3,7 @@ x-app: &app
   image: dispatch-engine
   environment:
     DATABASE_URL: postgresql+asyncpg://dispatch:dispatch@postgres:5432/dispatch
+    REDIS_URL: redis://redis:6379/0
 
 services:
   postgres:
@@ -23,6 +24,17 @@ services:
       retries: 10
     restart: unless-stopped
 
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    restart: unless-stopped
+
   # One-shot. Runs before the API so a scaled-out API never races on migrations.
   migrate:
     <<: *app
@@ -38,12 +50,24 @@ services:
     depends_on:
       migrate:
         condition: service_completed_successfully
+      redis:
+        condition: service_healthy
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/ready')"]
       interval: 10s
       timeout: 3s
       retries: 5
       start_period: 10s
+    restart: unless-stopped
+
+  worker:
+    <<: *app
+    command: ["python", "-m", "dispatch_engine.worker"]
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
     restart: unless-stopped
 
 volumes:

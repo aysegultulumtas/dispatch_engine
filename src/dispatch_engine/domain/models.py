@@ -72,3 +72,47 @@ class Technician:
             raise InvalidTransition(f"job {job.id} is not held by {self.name}")
         job.complete()
         self.job_ids.remove(job.id)
+
+
+class DispatchRunStatus(StrEnum):
+    QUEUED = "queued"
+    RUNNING = "running"
+    SUCCEEDED = "succeeded"
+    FAILED = "failed"
+
+
+@dataclass
+class Assignment:
+    """One job handed to one technician, produced by a completed DispatchRun."""
+
+    job_id: UUID
+    technician_id: UUID
+
+
+@dataclass
+class DispatchRun:
+    """A background 'dispatch every pending job' request. Lifecycle:
+    queued -> running -> (succeeded | failed). Runs in a worker (see
+    dispatch_engine.worker); the API only creates and polls these."""
+
+    id: UUID = field(default_factory=uuid4)
+    status: DispatchRunStatus = DispatchRunStatus.QUEUED
+    assignments: list[Assignment] = field(default_factory=list)
+    error: str | None = None
+
+    def start(self) -> None:
+        if self.status is not DispatchRunStatus.QUEUED:
+            raise InvalidTransition(f"dispatch run {self.id} is {self.status}, cannot start")
+        self.status = DispatchRunStatus.RUNNING
+
+    def succeed(self, assignments: list[Assignment]) -> None:
+        if self.status is not DispatchRunStatus.RUNNING:
+            raise InvalidTransition(f"dispatch run {self.id} is {self.status}, cannot succeed")
+        self.assignments = assignments
+        self.status = DispatchRunStatus.SUCCEEDED
+
+    def fail(self, error: str) -> None:
+        if self.status is not DispatchRunStatus.RUNNING:
+            raise InvalidTransition(f"dispatch run {self.id} is {self.status}, cannot fail")
+        self.error = error
+        self.status = DispatchRunStatus.FAILED

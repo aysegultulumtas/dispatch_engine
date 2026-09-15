@@ -5,11 +5,13 @@ from collections.abc import AsyncIterator
 from typing import Annotated
 
 from fastapi import Depends, Request
+from rq import Queue
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from dispatch_engine.domain import DispatchEngine
 from dispatch_engine.infra.db import async_session_maker
 from dispatch_engine.infra.postgres import PostgresRepository
+from dispatch_engine.infra.queue import dispatch_queue
 from dispatch_engine.infra.repository import Repository as RepositoryProtocol
 
 
@@ -27,5 +29,10 @@ def get_engine(request: Request) -> DispatchEngine:
     return engine
 
 
+def get_queue() -> Queue:
+    return dispatch_queue
+
+
 Repository = Annotated[RepositoryProtocol, Depends(get_repository)]
 Engine = Annotated[DispatchEngine, Depends(get_engine)]
+DispatchQueue = Annotated[Queue, Depends(get_queue)]

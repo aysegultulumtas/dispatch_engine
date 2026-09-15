@@ -3,7 +3,7 @@
 from collections.abc import Iterable
 
 from .exceptions import NoAvailableTechnician
-from .models import Job, Technician
+from .models import Assignment, Job, Technician
 
 
 class DispatchEngine:
@@ -20,3 +20,22 @@ class DispatchEngine:
         chosen = min(candidates, key=lambda t: t.load)
         chosen.take(job)
         return chosen
+
+    def dispatch_all(
+        self, jobs: Iterable[Job], technicians: Iterable[Technician]
+    ) -> list[Assignment]:
+        """Dispatch every job that can currently be placed; skip the rest.
+
+        Runs in the background worker (see dispatch_engine.worker), not a request
+        handler, so unlike dispatch() it never raises for an unassignable job —
+        one bad job in a batch must not sink the rest of the run.
+        """
+        technicians = list(technicians)
+        assignments = []
+        for job in jobs:
+            try:
+                chosen = self.dispatch(job, technicians)
+            except NoAvailableTechnician:
+                continue
+            assignments.append(Assignment(job_id=job.id, technician_id=chosen.id))
+        return assignments
