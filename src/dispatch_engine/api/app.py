@@ -3,7 +3,7 @@
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI, Request
+from fastapi import Depends, FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from redis.asyncio import Redis
@@ -11,10 +11,14 @@ from sqlalchemy import text
 
 from dispatch_engine import __version__
 from dispatch_engine.domain import DispatchEngine, DomainError
+from dispatch_engine.infra.db import async_session_maker
 from dispatch_engine.infra.db import engine as db_engine
+from dispatch_engine.infra.idempotency import PostgresIdempotencyStore
 from dispatch_engine.infra.queue import REDIS_URL
 
+from .idempotency import IdempotencyMiddleware
 from .routes import dispatch_runs, jobs, technicians
+from .security import expected_api_key, require_api_key
 
 # Local frontend dev servers only (Vite default 5173, Lovable-exported apps default 8080).
 # Tighten this to a real deployed origin before this ever leaves localhost.
@@ -32,17 +36,30 @@ async def lifespan(_: FastAPI) -> AsyncIterator[None]:
 
 
 def create_app() -> FastAPI:
+    if expected_api_key() is None:
+        # Fail at boot, not at the first request: an API with no key configured
+        # would otherwise be wide open (or, with a default, have a known secret).
+        raise RuntimeError("API_KEY environment variable is required")
+
     app = FastAPI(title="Dispatch Engine", version=__version__, lifespan=lifespan)
+    # Middleware order: the last one added runs first. CORS must be outermost so
+    # even an idempotency short-circuit response carries the CORS headers.
+    app.add_middleware(IdempotencyMiddleware)
     app.add_middleware(
         CORSMiddleware,
         allow_origins=LOCAL_DEV_ORIGINS,
         allow_methods=["*"],
         allow_headers=["*"],
+        expose_headers=["X-Request-ID", "X-Next-Cursor"],
     )
     app.state.engine = DispatchEngine()
-    app.include_router(technicians.router)
-    app.include_router(jobs.router)
-    app.include_router(dispatch_runs.router)
+    app.state.idempotency_store = PostgresIdempotencyStore(async_session_maker)
+
+    # /health, /ready and the docs stay open; everything that touches data needs the key.
+    protected = [Depends(require_api_key)]
+    app.include_router(technicians.router, dependencies=protected)
+    app.include_router(jobs.router, dependencies=protected)
+    app.include_router(dispatch_runs.router, dependencies=protected)
 
     @app.exception_handler(DomainError)
     async def domain_error_handler(_: Request, exc: DomainError) -> JSONResponse:
@@ -81,4 +98,5 @@ def create_app() -> FastAPI:
     return app
 
 
-app = create_app()
+# No module-level `app = create_app()`: the factory reads API_KEY and must fail at
+# process start, not on import. Run with `uvicorn dispatch_engine.api.app:create_app --factory`.

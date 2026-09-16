@@ -28,13 +28,15 @@ Requires [uv](https://docs.astral.sh/uv/) and Docker (for Postgres + Redis).
 uv sync                                  # creates .venv with dev tools
 docker compose up -d postgres redis
 uv run alembic upgrade head
-uv run uvicorn dispatch_engine.api.app:app --reload   # terminal 1: API
-uv run python -m dispatch_engine.worker                # terminal 2: worker
+API_KEY=dev-local-key uv run uvicorn dispatch_engine.api.app:create_app --factory --reload  # terminal 1: API
+uv run python -m dispatch_engine.worker                                                     # terminal 2: worker
 ```
 
 `DATABASE_URL` / `REDIS_URL` default to
 `postgresql+asyncpg://dispatch:dispatch@localhost:5432/dispatch` and
-`redis://localhost:6379/0` (see `.env.example`).
+`redis://localhost:6379/0` (see `.env.example`). `API_KEY` has no default: the
+API refuses to start without one (the app is a uvicorn `--factory` for exactly
+that reason).
 
 **Windows:** the worker auto-selects RQ's `SimpleWorker` (in-process, no
 `os.fork`) when `sys.platform == "win32"`; the container always uses the
@@ -68,9 +70,37 @@ required.
 | GET    | `/health`                 | liveness, no dependencies checked               |
 | GET    | `/ready`                  | readiness, pings Postgres + Redis               |
 
+### Authentication
+
+Every endpoint except `/health`, `/ready` and the docs requires the header
+`X-API-Key: <API_KEY>` (compared in constant time); missing or wrong → `401`.
+The scheme is declared in OpenAPI, so `/docs` has an "Authorize" button.
+Single shared key by design — see "Known limits".
+
+### Idempotency
+
+`POST /technicians`, `/jobs` and `/dispatch-runs` accept an optional
+`Idempotency-Key` header (Stripe pattern). Replaying the same key with the same
+body returns the original status and body without repeating the side effect;
+the same key with a different body → `422`; a key whose first request is still
+running → `409`. Keys are stored in Postgres (`idempotency_keys`) and expire
+after 24 hours.
+
 Rule violations (capacity, skill mismatch, invalid transition) return `409`;
 malformed payloads return `422`. A single `/jobs/{id}/dispatch` call stays
 synchronous and cheap; `/dispatch-runs` is for batch/solver-driven dispatch
 (Faz 8) that would otherwise block the event loop — the worker (a separate
 process, see `dispatch_engine.worker`) runs it and writes the result back to
 Postgres, which stays the source of truth even if Redis is momentarily down.
+
+## Known limits
+
+- **Redis is a single instance (SPOF).** If it goes down, `POST /dispatch-runs`
+  fails and the worker idles; already-recorded runs are safe because Postgres is
+  the source of truth (Redis is transport only). Redis Sentinel (1 replica +
+  3 sentinels, quorum 2) is the standard fix and is deliberately deferred until
+  a real production deployment; it is not worth the operational surface for a
+  local/portfolio stack.
+- **One shared API key, no users or roles.** Enough to keep the API off the
+  public internet; per-user auth (OAuth2/JWT) is only justified once there are
+  multiple principals (a multi-user or SaaS deployment).

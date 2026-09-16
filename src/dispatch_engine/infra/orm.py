@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+from datetime import datetime
+from typing import Any
 from uuid import UUID, uuid4
 
-from sqlalchemy import ARRAY, ForeignKey, String
+from sqlalchemy import ARRAY, DateTime, ForeignKey, String, func
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -43,3 +45,16 @@ class DispatchRunRow(Base):
     # asyncpg's JSON codec does not serialize UUID objects.
     assignments: Mapped[list[dict[str, str]]] = mapped_column(JSONB, default=list)
     error: Mapped[str | None] = mapped_column(String(500), nullable=True)
+
+
+class IdempotencyKeyRow(Base):
+    """One row per Idempotency-Key header seen. status_code/response_body are
+    NULL while the first request is still running (see infra/idempotency.py)."""
+
+    __tablename__ = "idempotency_keys"
+
+    key: Mapped[str] = mapped_column(String(255), primary_key=True)
+    request_hash: Mapped[str] = mapped_column(String(64))
+    status_code: Mapped[int | None]
+    response_body: Mapped[Any | None] = mapped_column(JSONB, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())

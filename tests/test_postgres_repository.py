@@ -8,6 +8,7 @@ must not touch data a developer is poking at through the running app."""
 
 import os
 from collections.abc import AsyncIterator
+from datetime import UTC, datetime, timedelta
 
 import pytest
 from fastapi.testclient import TestClient
@@ -17,6 +18,7 @@ from sqlalchemy.pool import NullPool
 from dispatch_engine.api.app import create_app
 from dispatch_engine.domain import Job, JobStatus, Technician
 from dispatch_engine.infra.db import Base
+from dispatch_engine.infra.idempotency import PostgresIdempotencyStore
 from dispatch_engine.infra.postgres import PostgresRepository
 
 TEST_DATABASE_URL = os.environ.get(
@@ -126,3 +128,22 @@ def test_ready_endpoint_reports_database_and_redis_reachable() -> None:
         _unreachable(str(r.json()))
     assert r.status_code == 200
     assert r.json() == {"status": "ready"}
+
+
+async def test_idempotency_reservation_is_first_writer_wins(session: AsyncSession) -> None:
+    # Same table, own transactions: the store gets a session maker, not the test session.
+    store = PostgresIdempotencyStore(async_sessionmaker(session.bind, expire_on_commit=False))
+
+    assert await store.reserve("k", "h1") is None
+    taken = await store.reserve("k", "h1")  # second INSERT hits the PK → IntegrityError path
+    assert taken is not None
+    assert taken.status_code is None  # still "in progress"
+
+    await store.complete("k", 201, {"id": "x"})
+    replay = await store.reserve("k", "h1")
+    assert replay is not None
+    assert (replay.status_code, replay.response_body) == (201, {"id": "x"})
+
+    await store.release("k")
+    assert await store.reserve("k", "h2") is None
+    assert await store.purge_expired(datetime.now(UTC) + timedelta(seconds=1)) == 1

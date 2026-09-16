@@ -4,6 +4,7 @@ x-app: &app
   environment:
     DATABASE_URL: postgresql+asyncpg://dispatch:dispatch@postgres:5432/dispatch
     REDIS_URL: redis://redis:6379/0
+    API_KEY: dev-local-key  # local stack only; a deployment sets a real secret
 
 services:
   postgres:
