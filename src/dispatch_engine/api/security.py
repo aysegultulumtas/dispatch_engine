@@ -14,7 +14,7 @@ from typing import Annotated
 from fastapi import HTTPException, Security, status
 from fastapi.security import APIKeyHeader
 
-_api_key_header = APIKeyHeader(name="X-API-Key", auto_error=False)
+api_key_header = APIKeyHeader(name="X-API-Key", auto_error=False)
 
 
 def expected_api_key() -> str | None:
@@ -22,7 +22,7 @@ def expected_api_key() -> str | None:
     return os.environ.get("API_KEY") or None
 
 
-def require_api_key(presented: Annotated[str | None, Security(_api_key_header)]) -> None:
+def require_api_key(presented: Annotated[str | None, Security(api_key_header)]) -> None:
     expected = expected_api_key()
     if expected is None:  # pragma: no cover - create_app refuses to start without it
         raise HTTPException(status_code=500, detail="API_KEY is not configured")

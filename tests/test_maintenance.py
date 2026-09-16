@@ -53,7 +53,7 @@ async def _seed(queue: Queue) -> dict[str, UUID]:
     session_maker = async_sessionmaker(engine, expire_on_commit=False)
     ids: dict[str, UUID] = {}
     async with session_maker() as s:
-        repo = PostgresRepository(s)
+        repo = PostgresRepository(s, actor="test")
 
         async def run(name: str, status: DispatchRunStatus, age: timedelta) -> None:
             r = await repo.add_dispatch_run(DispatchRun())
@@ -96,7 +96,7 @@ async def _assert_and_drop(ids: dict[str, UUID], queue: Queue) -> None:
     engine = create_async_engine(TEST_DATABASE_URL, poolclass=NullPool)
     session_maker = async_sessionmaker(engine, expire_on_commit=False)
     async with session_maker() as s:
-        repo = PostgresRepository(s)
+        repo = PostgresRepository(s, actor="test")
 
         async def status(name: str) -> DispatchRunStatus | None:
             r = await repo.get_dispatch_run(ids[name])

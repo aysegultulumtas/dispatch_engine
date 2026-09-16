@@ -7,7 +7,7 @@ from dispatch_engine.infra.repository import Repository as RepositoryProtocol
 
 from ..deps import Engine, Repository
 from ..pagination import PageParams
-from ..schemas import JobCreate, JobRead
+from ..schemas import JobCreate, JobEventRead, JobRead
 
 router = APIRouter(prefix="/jobs", tags=["jobs"])
 
@@ -34,6 +34,13 @@ async def list_jobs(repo: Repository, page: PageParams, response: Response) -> l
 @router.get("/{job_id}")
 async def get_job(job_id: UUID, repo: Repository) -> JobRead:
     return JobRead.from_domain(await _job_or_404(repo, job_id))
+
+
+@router.get("/{job_id}/events")
+async def list_job_events(job_id: UUID, repo: Repository) -> list[JobEventRead]:
+    """Audit trail: every status change of this job, oldest first, with its actor."""
+    await _job_or_404(repo, job_id)
+    return [JobEventRead.from_domain(e) for e in await repo.list_job_events(job_id)]
 
 
 @router.post("/{job_id}/dispatch")

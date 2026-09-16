@@ -8,6 +8,7 @@ from fastapi.testclient import TestClient
 
 from dispatch_engine.api.app import create_app
 from dispatch_engine.api.deps import get_queue, get_repository
+from dispatch_engine.api.ratelimit import rate_limit
 from dispatch_engine.infra.idempotency import InMemoryIdempotencyStore
 from dispatch_engine.infra.memory import InMemoryRepository
 
@@ -62,6 +63,7 @@ def app(
     app = create_app()
     app.dependency_overrides[get_repository] = lambda: repo
     app.dependency_overrides[get_queue] = lambda: queue
+    app.dependency_overrides[rate_limit] = lambda: None  # real Redis: tests/test_ratelimit.py
     app.state.idempotency_store = idempotency_store
     return app
 

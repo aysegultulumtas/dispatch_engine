@@ -11,6 +11,7 @@ from .models import (
     DispatchRun,
     DispatchRunStatus,
     Job,
+    JobEvent,
     JobStatus,
     Technician,
 )
@@ -24,6 +25,7 @@ __all__ = [
     "DomainError",
     "InvalidTransition",
     "Job",
+    "JobEvent",
     "JobStatus",
     "NoAvailableTechnician",
     "SkillMismatch",

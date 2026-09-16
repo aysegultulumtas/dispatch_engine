@@ -14,7 +14,7 @@ HEADERS = {"Content-Type": "application/json"}
 
 
 def _post_job(client: TestClient, key: str, body: bytes = JOB) -> httpx.Response:
-    return client.post("/jobs", content=body, headers={**HEADERS, "Idempotency-Key": key})
+    return client.post("/v1/jobs", content=body, headers={**HEADERS, "Idempotency-Key": key})
 
 
 def test_same_key_replays_the_first_response_without_a_second_side_effect(
@@ -25,7 +25,7 @@ def test_same_key_replays_the_first_response_without_a_second_side_effect(
     assert first.status_code == 201
     assert second.status_code == 201
     assert second.json() == first.json()
-    assert len(client.get("/jobs").json()) == 1
+    assert len(client.get("/v1/jobs").json()) == 1
 
 
 def test_same_key_different_body_is_422(client: TestClient) -> None:
@@ -39,12 +39,12 @@ def test_key_still_in_progress_is_409(
     client: TestClient, idempotency_store: InMemoryIdempotencyStore
 ) -> None:
     # Reserve the key the way a concurrent first request would, then race it.
-    request_hash = hashlib.sha256(b"/jobs\0" + JOB).hexdigest()
+    request_hash = hashlib.sha256(b"/v1/jobs\0" + JOB).hexdigest()
     assert asyncio.run(idempotency_store.reserve("k3", request_hash)) is None
     r = _post_job(client, "k3")
     assert r.status_code == 409
     assert "in progress" in r.json()["detail"]
-    assert client.get("/jobs").json() == []
+    assert client.get("/v1/jobs").json() == []
 
 
 def test_failed_request_releases_the_key(client: TestClient) -> None:
@@ -54,13 +54,13 @@ def test_failed_request_releases_the_key(client: TestClient) -> None:
 
 
 def test_without_header_nothing_is_cached(client: TestClient) -> None:
-    client.post("/jobs", content=JOB, headers=HEADERS)
-    client.post("/jobs", content=JOB, headers=HEADERS)
-    assert len(client.get("/jobs").json()) == 2
+    client.post("/v1/jobs", content=JOB, headers=HEADERS)
+    client.post("/v1/jobs", content=JOB, headers=HEADERS)
+    assert len(client.get("/v1/jobs").json()) == 2
 
 
 def test_dispatch_run_replay_enqueues_once(client: TestClient) -> None:
-    first = client.post("/dispatch-runs", headers={"Idempotency-Key": "run-1"})
-    second = client.post("/dispatch-runs", headers={"Idempotency-Key": "run-1"})
+    first = client.post("/v1/dispatch-runs", headers={"Idempotency-Key": "run-1"})
+    second = client.post("/v1/dispatch-runs", headers={"Idempotency-Key": "run-1"})
     assert first.status_code == second.status_code == 202
     assert first.json()["id"] == second.json()["id"]

@@ -55,7 +55,7 @@ async def session() -> AsyncIterator[AsyncSession]:
 
 
 async def test_add_and_get_technician(session: AsyncSession) -> None:
-    repo = PostgresRepository(session)
+    repo = PostgresRepository(session, actor="test")
     tech = Technician(name="Ahmet", max_jobs=2, skills=frozenset({"elektrik"}))
     await repo.add_technician(tech)
 
@@ -68,7 +68,7 @@ async def test_add_and_get_technician(session: AsyncSession) -> None:
 
 
 async def test_one_to_many_job_assignment_persists(session: AsyncSession) -> None:
-    repo = PostgresRepository(session)
+    repo = PostgresRepository(session, actor="test")
     tech_in = Technician(name="Ayşe", max_jobs=3, skills=frozenset({"tesisat"}))
     tech = await repo.add_technician(tech_in)
     job1 = await repo.add_job(Job(title="Musluk tamiri", skill="tesisat"))
@@ -88,7 +88,7 @@ async def test_one_to_many_job_assignment_persists(session: AsyncSession) -> Non
 
 
 async def test_completed_job_no_longer_counts_toward_load(session: AsyncSession) -> None:
-    repo = PostgresRepository(session)
+    repo = PostgresRepository(session, actor="test")
     tech_in = Technician(name="Mert", max_jobs=1, skills=frozenset({"boya"}))
     tech = await repo.add_technician(tech_in)
     job = await repo.add_job(Job(title="Duvar boyama", skill="boya"))
@@ -109,7 +109,7 @@ async def test_completed_job_no_longer_counts_toward_load(session: AsyncSession)
 
 
 async def test_list_returns_everything_added(session: AsyncSession) -> None:
-    repo = PostgresRepository(session)
+    repo = PostgresRepository(session, actor="test")
     t1 = await repo.add_technician(Technician(name="A", max_jobs=1, skills=frozenset({"x"})))
     t2 = await repo.add_technician(Technician(name="B", max_jobs=1, skills=frozenset({"y"})))
     j1 = await repo.add_job(Job(title="J1", skill="x"))
@@ -150,7 +150,7 @@ async def test_idempotency_reservation_is_first_writer_wins(session: AsyncSessio
 
 
 async def test_keyset_pagination_orders_by_created_at_then_id(session: AsyncSession) -> None:
-    repo = PostgresRepository(session)
+    repo = PostgresRepository(session, actor="test")
     jobs = [await repo.add_job(Job(title=f"J{i}", skill="x")) for i in range(3)]
     expected = [j.id for j in sorted(jobs, key=lambda j: (j.created_at, j.id))]
 
@@ -159,3 +159,21 @@ async def test_keyset_pagination_orders_by_created_at_then_id(session: AsyncSess
 
     assert [j.id for j in first] == expected[:2]
     assert [j.id for j in rest] == expected[2:]  # the row-value comparison resumes past the cursor
+
+
+async def test_update_job_appends_an_event_only_on_status_change(session: AsyncSession) -> None:
+    repo = PostgresRepository(session, actor="api")
+    tech = await repo.add_technician(Technician(name="Ada", max_jobs=1, skills=frozenset({"x"})))
+    job = await repo.add_job(Job(title="J", skill="x"))
+
+    await repo.update_job(job)  # no transition → no row
+    tech.take(job)
+    await repo.update_job(job)
+    tech.release(job)
+    await repo.update_job(job)
+
+    events = await repo.list_job_events(job.id)
+    assert [(e.from_status, e.to_status, e.technician_id, e.actor) for e in events] == [
+        (JobStatus.PENDING, JobStatus.ASSIGNED, tech.id, "api"),
+        (JobStatus.ASSIGNED, JobStatus.COMPLETED, tech.id, "api"),
+    ]

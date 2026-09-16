@@ -58,7 +58,7 @@ async def sweep(queue: Queue) -> dict[str, int]:
     now = datetime.now(UTC)
     async with worker_sessions() as session_maker:
         async with session_maker() as session:
-            repo = PostgresRepository(session)
+            repo = PostgresRepository(session, actor="worker:sweep")
             deleted = await repo.delete_finished_dispatch_runs(now - FINISHED_RUN_RETENTION)
 
             stale = await repo.list_stale_dispatch_runs(

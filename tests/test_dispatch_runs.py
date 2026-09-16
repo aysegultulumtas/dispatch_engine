@@ -4,7 +4,7 @@ from .conftest import FakeQueue
 
 
 def test_create_dispatch_run_returns_202_and_enqueues(client: TestClient, queue: FakeQueue) -> None:
-    r = client.post("/dispatch-runs")
+    r = client.post("/v1/dispatch-runs")
     assert r.status_code == 202
     body = r.json()
     assert body["status"] == "queued"
@@ -16,11 +16,11 @@ def test_create_dispatch_run_returns_202_and_enqueues(client: TestClient, queue:
 
 
 def test_get_dispatch_run_returns_persisted_state(client: TestClient) -> None:
-    created = client.post("/dispatch-runs").json()
-    r = client.get(f"/dispatch-runs/{created['id']}")
+    created = client.post("/v1/dispatch-runs").json()
+    r = client.get(f"/v1/dispatch-runs/{created['id']}")
     assert r.status_code == 200
     assert r.json() == created
 
 
 def test_get_unknown_dispatch_run_returns_404(client: TestClient) -> None:
-    assert client.get("/dispatch-runs/00000000-0000-0000-0000-000000000000").status_code == 404
+    assert client.get("/v1/dispatch-runs/00000000-0000-0000-0000-000000000000").status_code == 404

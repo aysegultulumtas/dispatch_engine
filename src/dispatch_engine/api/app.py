@@ -3,7 +3,7 @@
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
-from fastapi import Depends, FastAPI, Request
+from fastapi import APIRouter, Depends, FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from redis.asyncio import Redis
@@ -15,9 +15,11 @@ from dispatch_engine.infra.db import async_session_maker
 from dispatch_engine.infra.db import engine as db_engine
 from dispatch_engine.infra.idempotency import PostgresIdempotencyStore
 from dispatch_engine.infra.queue import REDIS_URL
+from dispatch_engine.infra.ratelimit import RedisTokenBucket
 from dispatch_engine.observability import RequestIdMiddleware, configure_logging, configure_tracing
 
 from .idempotency import IdempotencyMiddleware
+from .ratelimit import rate_limit
 from .routes import dispatch_runs, jobs, technicians
 from .security import expected_api_key, require_api_key
 
@@ -31,9 +33,10 @@ LOCAL_DEV_ORIGINS = [
 
 
 @asynccontextmanager
-async def lifespan(_: FastAPI) -> AsyncIterator[None]:
+async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     yield
     await db_engine.dispose()
+    await app.state.rate_limiter.aclose()
 
 
 def create_app() -> FastAPI:
@@ -60,12 +63,15 @@ def create_app() -> FastAPI:
 
     app.state.engine = DispatchEngine()
     app.state.idempotency_store = PostgresIdempotencyStore(async_session_maker)
+    app.state.rate_limiter = RedisTokenBucket(Redis.from_url(REDIS_URL))
 
-    # /health, /ready and the docs stay open; everything that touches data needs the key.
-    protected = [Depends(require_api_key)]
-    app.include_router(technicians.router, dependencies=protected)
-    app.include_router(jobs.router, dependencies=protected)
-    app.include_router(dispatch_runs.router, dependencies=protected)
+    # Everything that touches data lives under /v1, needs the key and is rate
+    # limited (in that order). /health, /ready and the docs stay open at the root.
+    v1 = APIRouter(prefix="/v1", dependencies=[Depends(require_api_key), Depends(rate_limit)])
+    v1.include_router(technicians.router)
+    v1.include_router(jobs.router)
+    v1.include_router(dispatch_runs.router)
+    app.include_router(v1)
 
     @app.exception_handler(DomainError)
     async def domain_error_handler(_: Request, exc: DomainError) -> JSONResponse:

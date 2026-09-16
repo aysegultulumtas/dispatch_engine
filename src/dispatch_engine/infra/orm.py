@@ -46,6 +46,20 @@ class JobRow(TimestampedRow, Base):
     technician: Mapped[TechnicianRow | None] = relationship(back_populates="jobs")
 
 
+class JobEventRow(Base):
+    """Append-only: written by PostgresRepository.update_job on a status change, never updated."""
+
+    __tablename__ = "job_events"
+
+    id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
+    job_id: Mapped[UUID] = mapped_column(ForeignKey("jobs.id"), index=True)
+    from_status: Mapped[str] = mapped_column(String(20))
+    to_status: Mapped[str] = mapped_column(String(20))
+    technician_id: Mapped[UUID | None] = mapped_column(ForeignKey("technicians.id"), nullable=True)
+    actor: Mapped[str] = mapped_column(String(100))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
 class DispatchRunRow(TimestampedRow, Base):
     __tablename__ = "dispatch_runs"
 

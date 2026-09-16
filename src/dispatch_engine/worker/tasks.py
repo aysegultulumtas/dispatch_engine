@@ -59,7 +59,7 @@ def run_dispatch(run_id: str) -> None:
 
 async def _run_dispatch(run_id: str) -> None:
     async with worker_sessions() as session_maker, session_maker() as session:
-        repo = PostgresRepository(session)
+        repo = PostgresRepository(session, actor=f"worker:{run_id}")
         run = await repo.get_dispatch_run(UUID(run_id))
         if run is None or run.status in (DispatchRunStatus.SUCCEEDED, DispatchRunStatus.FAILED):
             log.info("dispatch run skipped", reason="unknown or already finished")

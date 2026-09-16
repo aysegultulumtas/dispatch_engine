@@ -53,7 +53,7 @@ async def _seed() -> tuple[UUID, UUID, UUID]:
         _unreachable(str(exc))
     session_maker = async_sessionmaker(engine, expire_on_commit=False)
     async with session_maker() as s:
-        repo = PostgresRepository(s)
+        repo = PostgresRepository(s, actor="test")
         tech = await repo.add_technician(
             Technician(name="Ada", max_jobs=1, skills=frozenset({"hvac"}))
         )
@@ -67,7 +67,7 @@ async def _assert_and_drop(job_id: UUID, tech_id: UUID, run_id: UUID) -> None:
     engine = create_async_engine(TEST_DATABASE_URL, poolclass=NullPool)
     session_maker = async_sessionmaker(engine, expire_on_commit=False)
     async with session_maker() as s:
-        repo = PostgresRepository(s)
+        repo = PostgresRepository(s, actor="test")
         run = await repo.get_dispatch_run(run_id)
         assert run is not None
         assert run.status is DispatchRunStatus.SUCCEEDED
@@ -75,6 +75,10 @@ async def _assert_and_drop(job_id: UUID, tech_id: UUID, run_id: UUID) -> None:
         job = await repo.get_job(job_id)
         assert job is not None
         assert job.status is JobStatus.ASSIGNED
+        events = await repo.list_job_events(job_id)
+        assert [(e.from_status, e.to_status, e.actor) for e in events] == [
+            (JobStatus.PENDING, JobStatus.ASSIGNED, f"worker:{run_id}")
+        ]
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.drop_all)
     await engine.dispose()

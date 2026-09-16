@@ -40,6 +40,20 @@ class Job:
 
 
 @dataclass
+class JobEvent:
+    """Append-only audit record: one status transition of one job, and who did it
+    ("api" for a request, "worker:<run_id>" for a batch run)."""
+
+    job_id: UUID
+    from_status: JobStatus
+    to_status: JobStatus
+    technician_id: UUID | None
+    actor: str
+    id: UUID = field(default_factory=uuid4)
+    created_at: datetime = field(default_factory=lambda: datetime.now(UTC))
+
+
+@dataclass
 class Technician:
     """A worker with a skill set and a hard cap on concurrent jobs."""
 

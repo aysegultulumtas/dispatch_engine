@@ -5,7 +5,7 @@ from datetime import datetime
 from typing import Protocol
 from uuid import UUID
 
-from dispatch_engine.domain import DispatchRun, DispatchRunStatus, Job, Technician
+from dispatch_engine.domain import DispatchRun, DispatchRunStatus, Job, JobEvent, Technician
 
 # Keyset cursor position: list_* return rows ordered by (created_at, id) and
 # `after` resumes strictly past this pair. limit=None means everything (the
@@ -27,6 +27,8 @@ class Repository(Protocol):
         self, limit: int | None = None, after: Keyset | None = None
     ) -> list[Job]: ...
     async def update_job(self, job: Job) -> None: ...
+    # Audit trail: update_job records every status change with the repository's actor.
+    async def list_job_events(self, job_id: UUID) -> list[JobEvent]: ...
 
     async def add_dispatch_run(self, run: DispatchRun) -> DispatchRun: ...
     async def get_dispatch_run(self, run_id: UUID) -> DispatchRun | None: ...

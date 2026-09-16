@@ -25,14 +25,14 @@ def fast_polling(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 def _run(client: TestClient, repo: InMemoryRepository) -> DispatchRun:
-    run_id = client.post("/dispatch-runs").json()["id"]
+    run_id = client.post("/v1/dispatch-runs").json()["id"]
     run = asyncio.run(repo.get_dispatch_run(UUID(run_id)))
     assert run is not None
     return run
 
 
 def _events(client: TestClient, run_id: UUID) -> list[dict[str, Any]]:
-    with client.stream("GET", f"/dispatch-runs/{run_id}/events") as r:
+    with client.stream("GET", f"/v1/dispatch-runs/{run_id}/events") as r:
         assert r.status_code == 200
         assert r.headers["content-type"].startswith("text/event-stream")
         return [json.loads(line[6:]) for line in r.iter_lines() if line.startswith("data: ")]
@@ -52,7 +52,7 @@ def test_stream_emits_each_status_change_then_closes(
     events = _events(client, run.id)  # returns only because the terminal status closed it
 
     assert [e["status"] for e in events] == ["queued", "running", "succeeded"]
-    assert events[-1] == client.get(f"/dispatch-runs/{run.id}").json()  # same JSON as polling
+    assert events[-1] == client.get(f"/v1/dispatch-runs/{run.id}").json()  # same JSON as polling
 
 
 def test_already_finished_run_emits_once_and_closes(
@@ -66,5 +66,5 @@ def test_already_finished_run_emits_once_and_closes(
 
 
 def test_unknown_run_is_404(client: TestClient) -> None:
-    r = client.get("/dispatch-runs/00000000-0000-0000-0000-000000000000/events")
+    r = client.get("/v1/dispatch-runs/00000000-0000-0000-0000-000000000000/events")
     assert r.status_code == 404

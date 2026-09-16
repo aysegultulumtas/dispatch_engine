@@ -57,30 +57,34 @@ required.
 
 ## API
 
-| Method | Path                      | Notes                                          |
-| ------ | ------------------------- | ----------------------------------------------- |
-| POST   | `/technicians`            | `{name, max_jobs, skills[]}`                    |
-| GET    | `/technicians`            | includes current `load`                         |
-| POST   | `/jobs`                   | `{title, skill}`                                |
-| GET    | `/jobs`, `/jobs/{id}`     |                                                  |
-| POST   | `/jobs/{id}/dispatch`     | synchronous; least-loaded technician with skill |
-| POST   | `/jobs/{id}/complete`     | frees the technician's slot                     |
-| POST   | `/dispatch-runs`          | `202`; queues "dispatch every pending job"      |
-| GET    | `/dispatch-runs/{id}`     | poll for `queued\|running\|succeeded\|failed`   |
-| GET    | `/dispatch-runs/{id}/events` | Server-Sent Events, closes on a terminal status |
-| GET    | `/health`                 | liveness, no dependencies checked               |
-| GET    | `/ready`                  | readiness, pings Postgres + Redis               |
+All data endpoints are versioned under `/v1`; `/health` and `/ready` stay at
+the root so probes never depend on an API version.
+
+| Method | Path                            | Notes                                           |
+| ------ | ------------------------------- | ----------------------------------------------- |
+| POST   | `/v1/technicians`               | `{name, max_jobs, skills[]}`                    |
+| GET    | `/v1/technicians`               | includes current `load`; paginated              |
+| POST   | `/v1/jobs`                      | `{title, skill}`                                |
+| GET    | `/v1/jobs`, `/v1/jobs/{id}`     | list is paginated                               |
+| GET    | `/v1/jobs/{id}/events`          | audit trail: every status change + actor        |
+| POST   | `/v1/jobs/{id}/dispatch`        | synchronous; least-loaded technician with skill |
+| POST   | `/v1/jobs/{id}/complete`        | frees the technician's slot                     |
+| POST   | `/v1/dispatch-runs`             | `202`; queues "dispatch every pending job"      |
+| GET    | `/v1/dispatch-runs/{id}`        | poll for `queued\|running\|succeeded\|failed`   |
+| GET    | `/v1/dispatch-runs/{id}/events` | Server-Sent Events, closes on a terminal status |
+| GET    | `/health`                       | liveness, no dependencies checked               |
+| GET    | `/ready`                        | readiness, pings Postgres + Redis               |
 
 ### Authentication
 
-Every endpoint except `/health`, `/ready` and the docs requires the header
+Every `/v1` endpoint requires the header
 `X-API-Key: <API_KEY>` (compared in constant time); missing or wrong → `401`.
 The scheme is declared in OpenAPI, so `/docs` has an "Authorize" button.
 Single shared key by design — see "Known limits".
 
 ### Idempotency
 
-`POST /technicians`, `/jobs` and `/dispatch-runs` accept an optional
+`POST /v1/technicians`, `/v1/jobs` and `/v1/dispatch-runs` accept an optional
 `Idempotency-Key` header (Stripe pattern). Replaying the same key with the same
 body returns the original status and body without repeating the side effect;
 the same key with a different body → `422`; a key whose first request is still
@@ -89,21 +93,38 @@ after 24 hours.
 
 ### Pagination
 
-`GET /technicians` and `GET /jobs` are keyset-paginated on `(created_at, id)`:
+`GET /v1/technicians` and `GET /v1/jobs` are keyset-paginated on `(created_at, id)`:
 `?limit=` (default 50, max 200) and `?cursor=`. The body stays a plain array;
 when there is another page the response carries an `X-Next-Cursor` header —
 pass it back as `?cursor=`. A cursor that does not decode → `422`.
 
 ### Live status (SSE)
 
-`GET /dispatch-runs/{id}/events` is a `text/event-stream`: the current state
+`GET /v1/dispatch-runs/{id}/events` is a `text/event-stream`: the current state
 first, then one `data: <same JSON as GET /dispatch-runs/{id}>` event per status
 change, closed after `succeeded`/`failed` (or after 10 minutes). Plain polling
-of `GET /dispatch-runs/{id}` keeps working.
+of `GET /v1/dispatch-runs/{id}` keeps working.
 
 ```sh
-curl -N -H "X-API-Key: dev-local-key" http://localhost:8000/dispatch-runs/<id>/events
+curl -N -H "X-API-Key: dev-local-key" http://localhost:8000/v1/dispatch-runs/<id>/events
 ```
+
+### Rate limiting
+
+Every `/v1` request spends one token from a per-API-key bucket in Redis
+(atomic Lua script): 120 tokens of burst, refilled at 60 per minute. An empty
+bucket answers `429` with a `Retry-After` header (seconds). If Redis is
+unreachable the request is allowed and a warning is logged (fail-open) — a
+broker outage already pauses batch dispatch, and it must not take the whole
+API with it.
+
+### Audit trail
+
+Every job status change (`pending→assigned`, `assigned→completed`) is appended
+to `job_events` with the actor that caused it: `api` for a request,
+`worker:<run_id>` for a batch run. `GET /v1/jobs/{id}/events` returns them
+oldest first. Rows are never updated or deleted. There is no DELETE endpoint,
+so there is no soft-delete either.
 
 ### Maintenance sweep
 

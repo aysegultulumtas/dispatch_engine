@@ -6,7 +6,14 @@ from datetime import UTC, datetime
 from typing import Protocol
 from uuid import UUID
 
-from dispatch_engine.domain import DispatchRun, DispatchRunStatus, Job, Technician
+from dispatch_engine.domain import (
+    DispatchRun,
+    DispatchRunStatus,
+    Job,
+    JobEvent,
+    JobStatus,
+    Technician,
+)
 
 from .repository import Keyset
 
@@ -26,9 +33,12 @@ def _page[T: _HasKeyset](items: Iterable[T], limit: int | None, after: Keyset | 
 
 
 class InMemoryRepository:
-    def __init__(self) -> None:
+    def __init__(self, actor: str = "api") -> None:
+        self._actor = actor
         self._technicians: dict[UUID, Technician] = {}
         self._jobs: dict[UUID, Job] = {}
+        self._job_status: dict[UUID, JobStatus] = {}  # last persisted status, to spot a change
+        self._job_events: list[JobEvent] = []
         self._dispatch_runs: dict[UUID, DispatchRun] = {}
         self._run_updated_at: dict[UUID, datetime] = {}  # mirrors the updated_at column
 
@@ -50,6 +60,7 @@ class InMemoryRepository:
 
     async def add_job(self, job: Job) -> Job:
         self._jobs[job.id] = job
+        self._job_status[job.id] = job.status
         return job
 
     async def get_job(self, job_id: UUID) -> Job | None:
@@ -60,6 +71,21 @@ class InMemoryRepository:
 
     async def update_job(self, job: Job) -> None:
         self._jobs[job.id] = job  # already the same object; kept for interface parity
+        previous = self._job_status[job.id]
+        if job.status is not previous:
+            self._job_events.append(
+                JobEvent(
+                    job_id=job.id,
+                    from_status=previous,
+                    to_status=job.status,
+                    technician_id=job.technician_id,
+                    actor=self._actor,
+                )
+            )
+            self._job_status[job.id] = job.status
+
+    async def list_job_events(self, job_id: UUID) -> list[JobEvent]:
+        return [e for e in self._job_events if e.job_id == job_id]
 
     async def add_dispatch_run(self, run: DispatchRun) -> DispatchRun:
         self._dispatch_runs[run.id] = run

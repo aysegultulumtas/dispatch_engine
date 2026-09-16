@@ -14,11 +14,12 @@ from dispatch_engine.domain import (
     DispatchRun,
     DispatchRunStatus,
     Job,
+    JobEvent,
     JobStatus,
     Technician,
 )
 
-from .orm import DispatchRunRow, JobRow, TechnicianRow
+from .orm import DispatchRunRow, JobEventRow, JobRow, TechnicianRow
 from .repository import Keyset
 
 _FINISHED = (DispatchRunStatus.SUCCEEDED.value, DispatchRunStatus.FAILED.value)
@@ -59,11 +60,25 @@ def _dispatch_run_to_domain(row: DispatchRunRow) -> DispatchRun:
     )
 
 
-class PostgresRepository:
-    """One repository per request, backed by one AsyncSession (see api/deps.py)."""
+def _job_event_to_domain(row: JobEventRow) -> JobEvent:
+    return JobEvent(
+        id=row.id,
+        job_id=row.job_id,
+        from_status=JobStatus(row.from_status),
+        to_status=JobStatus(row.to_status),
+        technician_id=row.technician_id,
+        actor=row.actor,
+        created_at=row.created_at,
+    )
 
-    def __init__(self, session: AsyncSession) -> None:
+
+class PostgresRepository:
+    """One repository per request, backed by one AsyncSession (see api/deps.py).
+    `actor` is stamped on every job status change it writes ("api", "worker:<run_id>")."""
+
+    def __init__(self, session: AsyncSession, actor: str) -> None:
         self._session = session
+        self._actor = actor
 
     async def add_technician(self, technician: Technician) -> Technician:
         row = TechnicianRow(
@@ -140,9 +155,29 @@ class PostgresRepository:
         row = await self._session.get(JobRow, job.id)
         if row is None:
             raise ValueError(f"job {job.id} not found")
+        if row.status != job.status.value:
+            # Same transaction as the update: the audit row and the change land together.
+            self._session.add(
+                JobEventRow(
+                    job_id=job.id,
+                    from_status=row.status,
+                    to_status=job.status.value,
+                    technician_id=job.technician_id,
+                    actor=self._actor,
+                )
+            )
         row.status = job.status.value
         row.technician_id = job.technician_id
         await self._session.commit()
+
+    async def list_job_events(self, job_id: UUID) -> list[JobEvent]:
+        stmt = (
+            select(JobEventRow)
+            .where(JobEventRow.job_id == job_id)
+            .order_by(JobEventRow.created_at, JobEventRow.id)
+        )
+        rows = (await self._session.execute(stmt)).scalars().all()
+        return [_job_event_to_domain(row) for row in rows]
 
     async def add_dispatch_run(self, run: DispatchRun) -> DispatchRun:
         row = DispatchRunRow(

@@ -21,7 +21,7 @@ async def get_db_session() -> AsyncIterator[AsyncSession]:
 
 
 def get_repository(session: Annotated[AsyncSession, Depends(get_db_session)]) -> RepositoryProtocol:
-    return PostgresRepository(session)
+    return PostgresRepository(session, actor="api")
 
 
 def get_engine(request: Request) -> DispatchEngine:

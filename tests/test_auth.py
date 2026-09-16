@@ -9,13 +9,13 @@ from dispatch_engine.api.app import create_app
 
 def test_missing_key_is_401(app: FastAPI) -> None:
     with TestClient(app) as anonymous:
-        r = anonymous.get("/technicians")
+        r = anonymous.get("/v1/technicians")
     assert r.status_code == 401
     assert r.json()["detail"] == "invalid or missing API key"
 
 
 def test_wrong_key_is_401(client: TestClient) -> None:
-    r = client.post("/jobs", json={"title": "x", "skill": "hvac"}, headers={"X-API-Key": "nope"})
+    r = client.post("/v1/jobs", json={"title": "x", "skill": "hvac"}, headers={"X-API-Key": "nope"})
     assert r.status_code == 401
 
 
@@ -32,7 +32,7 @@ def test_openapi_declares_the_security_scheme(client: TestClient) -> None:
     spec = client.get("/openapi.json").json()
     scheme = spec["components"]["securitySchemes"]["APIKeyHeader"]
     assert scheme == {"type": "apiKey", "in": "header", "name": "X-API-Key"}
-    assert spec["paths"]["/technicians"]["get"]["security"] == [{"APIKeyHeader": []}]
+    assert spec["paths"]["/v1/technicians"]["get"]["security"] == [{"APIKeyHeader": []}]
     assert "security" not in spec["paths"]["/health"]["get"]
 
 

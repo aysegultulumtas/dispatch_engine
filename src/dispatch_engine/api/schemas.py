@@ -1,11 +1,19 @@
 """Request/response contracts. Shape and type checks only; business rules live in domain/."""
 
+from datetime import datetime
 from typing import Annotated
 from uuid import UUID
 
 from pydantic import BaseModel, Field
 
-from dispatch_engine.domain import DispatchRun, DispatchRunStatus, Job, JobStatus, Technician
+from dispatch_engine.domain import (
+    DispatchRun,
+    DispatchRunStatus,
+    Job,
+    JobEvent,
+    JobStatus,
+    Technician,
+)
 
 NonEmptyStr = Annotated[str, Field(min_length=1, max_length=100)]
 
@@ -44,6 +52,28 @@ class JobRead(BaseModel):
     def from_domain(cls, j: Job) -> "JobRead":
         return cls(
             id=j.id, title=j.title, skill=j.skill, status=j.status, technician_id=j.technician_id
+        )
+
+
+class JobEventRead(BaseModel):
+    id: UUID
+    job_id: UUID
+    from_status: JobStatus
+    to_status: JobStatus
+    technician_id: UUID | None
+    actor: str
+    created_at: datetime
+
+    @classmethod
+    def from_domain(cls, e: JobEvent) -> "JobEventRead":
+        return cls(
+            id=e.id,
+            job_id=e.job_id,
+            from_status=e.from_status,
+            to_status=e.to_status,
+            technician_id=e.technician_id,
+            actor=e.actor,
+            created_at=e.created_at,
         )
 
 

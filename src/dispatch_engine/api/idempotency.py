@@ -17,7 +17,7 @@ from starlette.middleware.base import BaseHTTPMiddleware
 from dispatch_engine.infra.idempotency import IdempotencyStore
 
 # Creating endpoints only: the rest are either reads or already idempotent by id.
-IDEMPOTENT_PATHS = frozenset({"/technicians", "/jobs", "/dispatch-runs"})
+IDEMPOTENT_PATHS = frozenset({"/v1/technicians", "/v1/jobs", "/v1/dispatch-runs"})
 
 HEADER = "Idempotency-Key"
 
