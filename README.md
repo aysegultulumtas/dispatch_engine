@@ -67,6 +67,7 @@ required.
 | POST   | `/jobs/{id}/complete`     | frees the technician's slot                     |
 | POST   | `/dispatch-runs`          | `202`; queues "dispatch every pending job"      |
 | GET    | `/dispatch-runs/{id}`     | poll for `queued\|running\|succeeded\|failed`   |
+| GET    | `/dispatch-runs/{id}/events` | Server-Sent Events, closes on a terminal status |
 | GET    | `/health`                 | liveness, no dependencies checked               |
 | GET    | `/ready`                  | readiness, pings Postgres + Redis               |
 
@@ -85,6 +86,45 @@ body returns the original status and body without repeating the side effect;
 the same key with a different body → `422`; a key whose first request is still
 running → `409`. Keys are stored in Postgres (`idempotency_keys`) and expire
 after 24 hours.
+
+### Pagination
+
+`GET /technicians` and `GET /jobs` are keyset-paginated on `(created_at, id)`:
+`?limit=` (default 50, max 200) and `?cursor=`. The body stays a plain array;
+when there is another page the response carries an `X-Next-Cursor` header —
+pass it back as `?cursor=`. A cursor that does not decode → `422`.
+
+### Live status (SSE)
+
+`GET /dispatch-runs/{id}/events` is a `text/event-stream`: the current state
+first, then one `data: <same JSON as GET /dispatch-runs/{id}>` event per status
+change, closed after `succeeded`/`failed` (or after 10 minutes). Plain polling
+of `GET /dispatch-runs/{id}` keeps working.
+
+```sh
+curl -N -H "X-API-Key: dev-local-key" http://localhost:8000/dispatch-runs/<id>/events
+```
+
+### Maintenance sweep
+
+The worker runs a sweep at startup and then hourly (RQ's built-in scheduler,
+`work(with_scheduler=True)`), with fixed rules: finished runs older than 30
+days and idempotency keys older than 24 hours are deleted; a run `running` for
+more than 15 minutes is failed as `stale: worker lost`; a run `queued` for
+more than 5 minutes whose RQ job disappeared is re-enqueued under the same id.
+
+### Observability
+
+Logs are structured (structlog): human-readable on a TTY, JSON otherwise —
+uvicorn and rq lines included. Every request gets an `X-Request-ID` (yours is
+honoured, otherwise a uuid4), echoed on the response and attached to every log
+line of that request; the worker attaches `run_id` the same way.
+
+Tracing is OpenTelemetry (FastAPI, SQLAlchemy, Redis) and switches on only when
+the standard `OTEL_EXPORTER_OTLP_ENDPOINT` is set (plus `OTEL_SERVICE_NAME` if
+you like); without it no tracer is installed and nothing tries to export. When
+on, `trace_id` is added to log lines. No collector ships with the compose
+stack.
 
 Rule violations (capacity, skill mismatch, invalid transition) return `409`;
 malformed payloads return `422`. A single `/jobs/{id}/dispatch` call stays

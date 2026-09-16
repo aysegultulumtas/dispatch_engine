@@ -1,11 +1,12 @@
 from uuid import UUID
 
-from fastapi import APIRouter, HTTPException, status
+from fastapi import APIRouter, HTTPException, Response, status
 
 from dispatch_engine.domain import InvalidTransition, Job
 from dispatch_engine.infra.repository import Repository as RepositoryProtocol
 
 from ..deps import Engine, Repository
+from ..pagination import PageParams
 from ..schemas import JobCreate, JobRead
 
 router = APIRouter(prefix="/jobs", tags=["jobs"])
@@ -25,8 +26,9 @@ async def create_job(payload: JobCreate, repo: Repository) -> JobRead:
 
 
 @router.get("")
-async def list_jobs(repo: Repository) -> list[JobRead]:
-    return [JobRead.from_domain(j) for j in await repo.list_jobs()]
+async def list_jobs(repo: Repository, page: PageParams, response: Response) -> list[JobRead]:
+    jobs = await repo.list_jobs(limit=page.fetch_limit, after=page.after)
+    return [JobRead.from_domain(j) for j in page.apply(jobs, response)]
 
 
 @router.get("/{job_id}")

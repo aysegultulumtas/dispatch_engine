@@ -15,6 +15,7 @@ from dispatch_engine.infra.db import async_session_maker
 from dispatch_engine.infra.db import engine as db_engine
 from dispatch_engine.infra.idempotency import PostgresIdempotencyStore
 from dispatch_engine.infra.queue import REDIS_URL
+from dispatch_engine.observability import RequestIdMiddleware, configure_logging, configure_tracing
 
 from .idempotency import IdempotencyMiddleware
 from .routes import dispatch_runs, jobs, technicians
@@ -41,9 +42,12 @@ def create_app() -> FastAPI:
         # would otherwise be wide open (or, with a default, have a known secret).
         raise RuntimeError("API_KEY environment variable is required")
 
+    configure_logging()
     app = FastAPI(title="Dispatch Engine", version=__version__, lifespan=lifespan)
-    # Middleware order: the last one added runs first. CORS must be outermost so
-    # even an idempotency short-circuit response carries the CORS headers.
+    configure_tracing(app, db_engine)
+
+    # Middleware order: the last one added runs first (outermost). Request-ID wraps
+    # everything so even a CORS preflight or an idempotent replay is correlated.
     app.add_middleware(IdempotencyMiddleware)
     app.add_middleware(
         CORSMiddleware,
@@ -52,6 +56,8 @@ def create_app() -> FastAPI:
         allow_headers=["*"],
         expose_headers=["X-Request-ID", "X-Next-Cursor"],
     )
+    app.add_middleware(RequestIdMiddleware)
+
     app.state.engine = DispatchEngine()
     app.state.idempotency_store = PostgresIdempotencyStore(async_session_maker)
 

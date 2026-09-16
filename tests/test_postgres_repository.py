@@ -147,3 +147,15 @@ async def test_idempotency_reservation_is_first_writer_wins(session: AsyncSessio
     await store.release("k")
     assert await store.reserve("k", "h2") is None
     assert await store.purge_expired(datetime.now(UTC) + timedelta(seconds=1)) == 1
+
+
+async def test_keyset_pagination_orders_by_created_at_then_id(session: AsyncSession) -> None:
+    repo = PostgresRepository(session)
+    jobs = [await repo.add_job(Job(title=f"J{i}", skill="x")) for i in range(3)]
+    expected = [j.id for j in sorted(jobs, key=lambda j: (j.created_at, j.id))]
+
+    first = await repo.list_jobs(limit=2)
+    rest = await repo.list_jobs(limit=2, after=(first[-1].created_at, first[-1].id))
+
+    assert [j.id for j in first] == expected[:2]
+    assert [j.id for j in rest] == expected[2:]  # the row-value comparison resumes past the cursor

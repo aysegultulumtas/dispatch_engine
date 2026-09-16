@@ -49,11 +49,17 @@ def idempotency_store() -> InMemoryIdempotencyStore:
 
 
 @pytest.fixture
-def app(queue: FakeQueue, idempotency_store: InMemoryIdempotencyStore) -> FastAPI:
+def repo() -> InMemoryRepository:
+    return InMemoryRepository()
+
+
+@pytest.fixture
+def app(
+    queue: FakeQueue, idempotency_store: InMemoryIdempotencyStore, repo: InMemoryRepository
+) -> FastAPI:
     # Fresh app + in-memory repository per test: no Postgres needed for API tests,
     # keeps CI fast (Postgres-backed behavior is covered by test_postgres_repository.py).
     app = create_app()
-    repo = InMemoryRepository()
     app.dependency_overrides[get_repository] = lambda: repo
     app.dependency_overrides[get_queue] = lambda: queue
     app.state.idempotency_store = idempotency_store

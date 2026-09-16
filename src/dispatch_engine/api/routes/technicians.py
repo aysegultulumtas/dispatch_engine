@@ -1,8 +1,9 @@
-from fastapi import APIRouter, status
+from fastapi import APIRouter, Response, status
 
 from dispatch_engine.domain import Technician
 
 from ..deps import Repository
+from ..pagination import PageParams
 from ..schemas import TechnicianCreate, TechnicianRead
 
 router = APIRouter(prefix="/technicians", tags=["technicians"])
@@ -18,5 +19,8 @@ async def create_technician(payload: TechnicianCreate, repo: Repository) -> Tech
 
 
 @router.get("")
-async def list_technicians(repo: Repository) -> list[TechnicianRead]:
-    return [TechnicianRead.from_domain(t) for t in await repo.list_technicians()]
+async def list_technicians(
+    repo: Repository, page: PageParams, response: Response
+) -> list[TechnicianRead]:
+    technicians = await repo.list_technicians(limit=page.fetch_limit, after=page.after)
+    return [TechnicianRead.from_domain(t) for t in page.apply(technicians, response)]

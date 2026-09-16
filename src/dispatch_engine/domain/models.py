@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from datetime import UTC, datetime
 from enum import StrEnum
 from uuid import UUID, uuid4
 
@@ -24,6 +25,7 @@ class Job:
     id: UUID = field(default_factory=uuid4)
     status: JobStatus = JobStatus.PENDING
     technician_id: UUID | None = None
+    created_at: datetime = field(default_factory=lambda: datetime.now(UTC))
 
     def assign_to(self, technician_id: UUID) -> None:
         if self.status is not JobStatus.PENDING:
@@ -46,6 +48,7 @@ class Technician:
     skills: frozenset[str]
     id: UUID = field(default_factory=uuid4)
     job_ids: list[UUID] = field(default_factory=list)
+    created_at: datetime = field(default_factory=lambda: datetime.now(UTC))
 
     @property
     def load(self) -> int:
@@ -99,6 +102,7 @@ class DispatchRun:
     status: DispatchRunStatus = DispatchRunStatus.QUEUED
     assignments: list[Assignment] = field(default_factory=list)
     error: str | None = None
+    created_at: datetime = field(default_factory=lambda: datetime.now(UTC))
 
     def start(self) -> None:
         if self.status is not DispatchRunStatus.QUEUED:

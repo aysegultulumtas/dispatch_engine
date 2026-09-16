@@ -13,7 +13,17 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 from .db import Base
 
 
-class TechnicianRow(Base):
+class TimestampedRow:
+    """created_at drives keyset pagination (see api/pagination.py); updated_at
+    drives the maintenance sweep's staleness checks (see worker/maintenance.py)."""
+
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+
+class TechnicianRow(TimestampedRow, Base):
     __tablename__ = "technicians"
 
     id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
@@ -24,7 +34,7 @@ class TechnicianRow(Base):
     jobs: Mapped[list[JobRow]] = relationship(back_populates="technician")
 
 
-class JobRow(Base):
+class JobRow(TimestampedRow, Base):
     __tablename__ = "jobs"
 
     id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
@@ -36,7 +46,7 @@ class JobRow(Base):
     technician: Mapped[TechnicianRow | None] = relationship(back_populates="jobs")
 
 
-class DispatchRunRow(Base):
+class DispatchRunRow(TimestampedRow, Base):
     __tablename__ = "dispatch_runs"
 
     id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
