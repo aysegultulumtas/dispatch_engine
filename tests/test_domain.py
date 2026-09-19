@@ -1,3 +1,6 @@
+import copy
+import random
+
 import pytest
 
 from dispatch_engine.domain import (
@@ -95,6 +98,89 @@ def test_dispatch_all_stops_once_everyone_is_at_capacity() -> None:
     assignments = DispatchEngine().dispatch_all(jobs, [t])
     assert len(assignments) == 1
     assert [j.status for j in jobs].count(JobStatus.ASSIGNED) == 1
+
+
+def test_dispatch_all_with_everyone_already_full_returns_empty() -> None:
+    t = tech(max_jobs=1)
+    t.take(Job(title="X", skill="hvac"))
+    job = Job(title="Y", skill="hvac")
+    assert DispatchEngine().dispatch_all([job], [t]) == []
+    assert job.status is JobStatus.PENDING
+
+
+def test_dispatch_all_is_not_fooled_by_job_order() -> None:
+    # Ada is the only one who can do electrical; Bob can only do hvac. Greedy
+    # (least-loaded, first on a tie) hands the hvac job to Ada, and the
+    # electrical job then has nobody. The global optimum sends hvac to Bob.
+    ada, bob = tech("Ada", 1, "hvac", "electrical"), tech("Bob", 1, "hvac")
+    hvac_job, electrical_job = (
+        Job(title="AC", skill="hvac"),
+        Job(title="Wiring", skill="electrical"),
+    )
+
+    # The single-job greedy path really would pick Ada first — this is the trap.
+    assert DispatchEngine().dispatch(Job(title="probe", skill="hvac"), [ada, bob]) is ada
+    ada.job_ids.clear()
+
+    assignments = DispatchEngine().dispatch_all([hvac_job, electrical_job], [ada, bob])
+    assert assignments == [
+        Assignment(job_id=hvac_job.id, technician_id=bob.id),
+        Assignment(job_id=electrical_job.id, technician_id=ada.id),
+    ]
+    assert (hvac_job.technician_id, electrical_job.technician_id) == (bob.id, ada.id)
+
+
+def test_dispatch_all_spreads_load_when_count_is_tied() -> None:
+    ada, bob = tech("Ada", 3), tech("Bob", 3)
+    jobs = [Job(title=f"J{i}", skill="hvac") for i in range(4)]
+    assert len(DispatchEngine().dispatch_all(jobs, [ada, bob])) == 4
+    assert (ada.load, bob.load) == (2, 2)  # not 3 + 1
+
+
+def test_dispatch_all_balances_resulting_load_not_just_new_jobs() -> None:
+    busy, free = tech("Busy", 3), tech("Free", 3)
+    busy.take(Job(title="X", skill="hvac"))
+    busy.take(Job(title="Y", skill="hvac"))
+    jobs = [Job(title="A", skill="hvac"), Job(title="B", skill="hvac")]
+    DispatchEngine().dispatch_all(jobs, [busy, free])
+    assert (busy.load, free.load) == (2, 2)  # both new jobs to Free, not one each
+
+
+@pytest.mark.parametrize("seed", range(8))
+def test_dispatch_all_respects_capacity_and_skill_and_never_trails_greedy(seed: int) -> None:
+    rng = random.Random(seed)
+    skills = ("hvac", "plumbing", "electrical", "network")
+    technicians = [
+        tech(f"T{i}", rng.randint(1, 4), *rng.sample(skills, rng.randint(1, 3)))
+        for i in range(rng.randint(1, 6))
+    ]
+    jobs = [Job(title=f"J{i}", skill=rng.choice(skills)) for i in range(rng.randint(1, 20))]
+    greedy_jobs, greedy_technicians = copy.deepcopy((jobs, technicians))
+
+    assignments = DispatchEngine().dispatch_all(jobs, technicians)
+
+    jobs_by_id = {j.id: j for j in jobs}
+    technicians_by_id = {t.id: t for t in technicians}
+    assigned = {a.job_id for a in assignments}
+    assert len(assigned) == len(assignments)  # a job at most once
+    for a in assignments:
+        job, technician = jobs_by_id[a.job_id], technicians_by_id[a.technician_id]
+        assert job.skill in technician.skills
+        assert job.status is JobStatus.ASSIGNED and job.technician_id == technician.id
+        assert job.id in technician.job_ids
+    for t in technicians:
+        assert t.load <= t.max_jobs
+    assert sum(t.load for t in technicians) == len(assignments)
+    assert all(j.status is JobStatus.PENDING for j in jobs if j.id not in assigned)
+
+    greedy = 0
+    for job in greedy_jobs:
+        try:
+            DispatchEngine().dispatch(job, greedy_technicians)
+            greedy += 1
+        except NoAvailableTechnician:
+            pass
+    assert len(assignments) >= greedy
 
 
 def test_dispatch_run_starts() -> None:

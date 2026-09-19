@@ -81,7 +81,12 @@ async def _run_dispatch(run_id: str) -> None:
 
             run.succeed(assignments)
             await repo.update_dispatch_run(run)
-            log.info("dispatch run succeeded", pending=len(pending), assigned=len(assignments))
+            log.info(
+                "dispatch run succeeded",
+                pending=len(pending),
+                assigned=len(assignments),
+                solver="min_cost_flow",
+            )
         except Exception as exc:
             run.fail(str(exc))
             await repo.update_dispatch_run(run)

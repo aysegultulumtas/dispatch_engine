@@ -149,10 +149,15 @@ stack.
 
 Rule violations (capacity, skill mismatch, invalid transition) return `409`;
 malformed payloads return `422`. A single `/jobs/{id}/dispatch` call stays
-synchronous and cheap; `/dispatch-runs` is for batch/solver-driven dispatch
-(Faz 8) that would otherwise block the event loop — the worker (a separate
-process, see `dispatch_engine.worker`) runs it and writes the result back to
-Postgres, which stays the source of truth even if Redis is momentarily down.
+synchronous and cheap (greedy: least-loaded technician with the skill).
+`/dispatch-runs` takes every pending job as one batch and solves it globally
+with OR-Tools (`ortools.graph` min-cost max-flow): first as many jobs as can be
+placed at all, then, among those solutions, the most even resulting load — so
+a job never loses its only technician to an earlier job that had another
+option, which a one-at-a-time greedy pass cannot guarantee. That is CPU work
+that would block the event loop, so the worker (a separate process, see
+`dispatch_engine.worker`) runs it and writes the result back to Postgres, which
+stays the source of truth even if Redis is momentarily down.
 
 ## Known limits
 
