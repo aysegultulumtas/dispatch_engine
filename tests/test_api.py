@@ -19,6 +19,14 @@ def test_health(client: TestClient) -> None:
     assert client.get("/health").json()["status"] == "ok"
 
 
+def test_cors_exposes_headers_the_browser_ui_reads(client: TestClient) -> None:
+    # The UI reads the cursor, the request id and the 429 back-off from JS; a
+    # header the CORS layer does not expose is invisible to fetch() in a browser.
+    r = client.get("/health", headers={"Origin": "http://localhost:8080"})
+    exposed = {h.strip() for h in r.headers["access-control-expose-headers"].split(",")}
+    assert {"X-Request-ID", "X-Next-Cursor", "Retry-After"} <= exposed
+
+
 def test_malformed_payload_returns_422(client: TestClient) -> None:
     r = client.post("/v1/technicians", json={"name": "Ada", "max_jobs": -1, "skills": []})
     assert r.status_code == 422

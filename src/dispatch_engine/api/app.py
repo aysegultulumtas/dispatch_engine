@@ -57,7 +57,7 @@ def create_app() -> FastAPI:
         allow_origins=LOCAL_DEV_ORIGINS,
         allow_methods=["*"],
         allow_headers=["*"],
-        expose_headers=["X-Request-ID", "X-Next-Cursor"],
+        expose_headers=["X-Request-ID", "X-Next-Cursor", "Retry-After"],
     )
     app.add_middleware(RequestIdMiddleware)
 
